@@ -3,17 +3,27 @@
   import 'package:flutter_calendar_carousel/flutter_calendar_carousel.dart';
   import 'package:flutter_calendar_carousel/classes/event.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/timezone.dart' as tz;
+  import 'package:google_maps_flutter/google_maps_flutter.dart';
+  import 'dart:async';
 
+import 'location_picker.dart';
 import 'main.dart';
+import 'map_screen.dart';
 
   class Exam {
     final String title;
     final DateTime dateTime;
-  
-    Exam({required this.title, required this.dateTime});
+    final double latitude;
+    final double longitude;
+
+    Exam({
+      required this.title,
+      required this.dateTime,
+      required this.latitude,
+      required this.longitude,
+    });
   }
-  
+
   class HomePage extends StatefulWidget {
     const HomePage({Key? key})
         : super(key: key);
@@ -24,15 +34,53 @@ import 'main.dart';
   
   class _HomePageState extends State<HomePage> {
     List<Exam> myObjects = [
-      Exam(title: 'VIS', dateTime: DateTime(2023, 11, 30, 13, 30)),
-      Exam(title: 'CALCULUS', dateTime: DateTime(2024, 1, 22, 14, 20)),
-      Exam(title: 'DM', dateTime: DateTime(2024, 2, 2, 10, 0)),
+      Exam(title: 'VIS', dateTime: DateTime(2023, 11, 30, 13, 30), latitude: 42.004682, longitude: 21.408357),
+      Exam(title: 'CALCULUS', dateTime: DateTime(2024, 1, 22, 14, 20), latitude: 42.134236, longitude: 21.714559),
+      Exam(title: 'DM', dateTime: DateTime(2024, 2, 2, 10, 0), latitude: 42.004682, longitude: 21.408357),
     ];
 
     TextEditingController titleController = TextEditingController();
     DateTime selectedDateTime = DateTime.now();
     bool isAddingElement = false;
 
+
+    Completer<GoogleMapController> _controller = Completer();
+    LatLng? _selectedLocation;
+
+    void _showLocationPicker(Exam exam) async {
+      LatLng initialLocation = LatLng(42.004682, 21.408357);
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LocationPicker(
+            initialLocation: initialLocation,
+            onLocationSelected: (LatLng location) {
+              setState(() {
+                _selectedLocation = location;
+              });
+            },
+          ),
+        ),
+      );
+
+      if (_selectedLocation != null) {
+        setState(() {
+          myObjects.add(exam);
+          _toggleAddElement();
+          titleController.clear();
+        });
+
+        final now = DateTime.now();
+        final formatted = DateTime(now.year, now.month, now.day, now.hour, now.minute);
+
+        print(exam.dateTime.difference(formatted).inDays);
+
+        if (exam.dateTime.difference(formatted).inDays <= 1) {
+          _scheduleNotification(exam);
+        }
+      }
+    }
 
     void _scheduleNotification(Exam exam) async {
       final AndroidNotificationDetails androidPlatformChannelSpecifics =
@@ -80,7 +128,6 @@ import 'main.dart';
             actions: <Widget>[
               InkResponse(
                 onTap: () {
-                  // Add your button onPressed logic here
                   setState(() {
                     isAddingElement = !isAddingElement;
                   });
@@ -88,10 +135,10 @@ import 'main.dart';
                 child: const Padding(
                   padding: EdgeInsets.all(8.0),
                   child: CircleAvatar(
-                    backgroundColor: Colors.blue, // Set the background color of the circle
+                    backgroundColor: Colors.blue,
                     child: Icon(
                       Icons.add,
-                      color: Colors.white, // Set the color of the icon
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -108,7 +155,14 @@ import 'main.dart';
     }
 
 
-
+    void _showMap(Exam exam) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MapScreen(exam: exam),
+        ),
+      );
+    }
 
 
     Widget _buildGridView() {
@@ -140,10 +194,20 @@ import 'main.dart';
                 final minute = myObjects[index].dateTime.minute.toString().padLeft(2, '0');
                 final formattedDateTime = '$day/$month/$year $hour:$minute';
                 return Card(
-                  child: ListTile(
+                  child: Column(
+                  children: [
+                    ListTile(
                     title: Text(myObjects[index].title, style: const TextStyle(fontWeight: FontWeight.bold),),
                     subtitle: Text(formattedDateTime),
-                  ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        _showMap(myObjects[index]);
+                      },
+                      child: const Text('Show on Map'),
+                    ),
+                    ]
+                  )
                 );
               },
             ),
@@ -304,18 +368,24 @@ import 'main.dart';
         isAddingElement = !isAddingElement;
       });
     }
-  
+
     void _addElement() {
       if (titleController.text.isNotEmpty) {
         final newElement = Exam(
           title: titleController.text,
           dateTime: selectedDateTime,
+          latitude: _selectedLocation?.latitude ?? 42.004682,
+          longitude: _selectedLocation?.longitude ?? 21.408357,
         );
+
+        _showLocationPicker(newElement);
+
         setState(() {
           myObjects.add(newElement);
           _toggleAddElement();
           titleController.clear();
         });
+
 
         final now = DateTime.now();
         final fotmatted = DateTime(now.year, now.month, now.day, now.hour, now.minute);
